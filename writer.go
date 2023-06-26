@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/buger/jsonparser"
+	"github.com/bytedance/sonic"
+	"github.com/bytedance/sonic/ast"
 	"github.com/getsentry/sentry-go"
 	"github.com/rs/zerolog"
 )
@@ -127,7 +128,11 @@ func (w *Writer) Close() error {
 
 // parses the log level from the encoded log
 func (w *Writer) parseLogLevel(data []byte) (zerolog.Level, error) {
-	lvlStr, err := jsonparser.GetUnsafeString(data, zerolog.LevelFieldName)
+	lvlNode, err := sonic.Get(data, zerolog.LevelFieldName)
+	if err != nil {
+		return zerolog.Disabled, nil
+	}
+	lvlStr, err := lvlNode.String()
 	if err != nil {
 		return zerolog.Disabled, nil
 	}
@@ -145,24 +150,39 @@ func (w *Writer) parseLogEvent(data []byte) (*sentry.Event, bool) {
 		Extra:     map[string]interface{}{},
 	}
 
-	err := jsonparser.ObjectEach(data, func(key, value []byte, vt jsonparser.ValueType, offset int) error {
-		switch strKey := string(key); strKey {
+	rootNode, err := sonic.Get(data)
+	if err != nil {
+		return nil, false
+	}
+	var value ast.Pair
+	for iter, err := rootNode.Properties(); iter.Next(&value); {
+		if err != nil {
+			return nil, false
+		}
+		switch value.Key {
 		case zerolog.MessageFieldName:
-			event.Message = string(value)
+			event.Message, err = value.Value.String()
+			if err != nil {
+				return nil, false
+			}
 		case zerolog.ErrorFieldName:
+			content, err := value.Value.String()
+			if err != nil {
+				return nil, false
+			}
 			event.Exception = append(event.Exception, sentry.Exception{
-				Value:      string(value),
+				Value:      content,
 				Stacktrace: newStacktrace(),
 			})
 		case zerolog.LevelFieldName, zerolog.TimestampFieldName:
 		default:
-			event.Extra[strKey] = string(value)
+			content, err := value.Value.String()
+			if err != nil {
+				// it might be an embedded json => skip this entry
+				continue
+			}
+			event.Extra[value.Key] = content
 		}
-
-		return nil
-	})
-	if err != nil {
-		return nil, false
 	}
 
 	return &event, true
