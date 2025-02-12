@@ -5,7 +5,6 @@ linters:
     - whitespace
     - unconvert
     - bodyclose
-    - gofmt
     - nakedret
     - prealloc
     - rowserrcheck
