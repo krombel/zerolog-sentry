@@ -1,5 +1,5 @@
 name: test
-on: 
+on:
   push:
     tags:
       - v*
@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.18
+          go-version: 1.21
       - uses: actions/checkout@v3
       - run: make test
 
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.18
+          go-version: 1.21
       - uses: actions/checkout@v3
       - run: make coverage
       - run: bash <(curl -s https://codecov.io/bash)
