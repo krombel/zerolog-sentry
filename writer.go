@@ -2,7 +2,6 @@ package zlogsentry
 
 import (
 	"crypto/x509"
-	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+//nolint:gochecknoglobals
 var levelsMapping = map[zerolog.Level]sentry.Level{
 	zerolog.DebugLevel: sentry.LevelDebug,
 	zerolog.InfoLevel:  sentry.LevelInfo,
@@ -22,9 +22,15 @@ var levelsMapping = map[zerolog.Level]sentry.Level{
 	zerolog.PanicLevel: sentry.LevelFatal,
 }
 
-var _ = io.WriteCloser(new(Writer))
+// GetSentryLevel returns the corresponding sentry Level - or debug if not matching.
+func GetSentryLevel(level zerolog.Level) sentry.Level {
+	if sLevel, ok := levelsMapping[level]; ok {
+		return sLevel
+	}
+	return sentry.LevelDebug
+}
 
-var now = time.Now
+var _ = io.WriteCloser(new(Writer))
 
 // Writer is a sentry events writer with std io.Writer iface.
 type Writer struct {
@@ -33,9 +39,12 @@ type Writer struct {
 	levels          map[zerolog.Level]struct{}
 	flushTimeout    time.Duration
 	withBreadcrumbs bool
+
+	// for testing
+	now func() time.Time
 }
 
-// addBreadcrumb adds event as a breadcrumb
+// addBreadcrumb adds event as a breadcrumb.
 func (w *Writer) addBreadcrumb(event *sentry.Event) {
 	if !w.withBreadcrumbs {
 		return
@@ -58,27 +67,29 @@ func (w *Writer) addBreadcrumb(event *sentry.Event) {
 }
 
 // Write handles zerolog's json and sends events to sentry.
-func (w *Writer) Write(data []byte) (n int, err error) {
-	n = len(data)
+func (w *Writer) Write(data []byte) (int, error) {
+	n := len(data)
 
-	lvl, err := w.parseLogLevel(data)
+	lvl, err := w.InternalParseLogLevel(data)
 	if err != nil {
+		// inore event if we cannot parse it
+		//nolint:nilerr
 		return n, nil
 	}
 
-	event, ok := w.parseLogEvent(data)
+	event, ok := w.InternalParseLogEvent(data)
 	if !ok {
-		return
+		return n, nil
 	}
 	event.Level, ok = levelsMapping[lvl]
 	if !ok {
-		return
+		return n, nil
 	}
 
 	if _, enabled := w.levels[lvl]; !enabled {
 		// if the level is not enabled, add event as a breadcrumb
 		w.addBreadcrumb(event)
-		return
+		return n, nil
 	}
 
 	w.hub.CaptureEvent(event)
@@ -87,26 +98,29 @@ func (w *Writer) Write(data []byte) (n int, err error) {
 		w.hub.Flush(w.flushTimeout)
 	}
 
-	return
+	return n, nil
 }
 
-// implements zerolog.LevelWriter
-func (w *Writer) WriteLevel(level zerolog.Level, p []byte) (n int, err error) {
-	n = len(p)
+// implements zerolog.LevelWriter.
+func (w *Writer) WriteLevel(level zerolog.Level, p []byte) (int, error) {
+	n := len(p)
 
-	event, ok := w.parseLogEvent(p)
+	event, ok := w.InternalParseLogEvent(p)
 	if !ok {
-		return
+		// ignore unparseable event
+		return n, nil
 	}
 	event.Level, ok = levelsMapping[level]
 	if !ok {
-		return
+		// ignore event with no known level
+		return n, nil
 	}
 
 	if _, enabled := w.levels[level]; !enabled {
 		// if the level is not enabled, add event as a breadcrumb
 		w.addBreadcrumb(event)
-		return
+
+		return n, nil
 	}
 
 	w.hub.CaptureEvent(event)
@@ -114,7 +128,8 @@ func (w *Writer) WriteLevel(level zerolog.Level, p []byte) (n int, err error) {
 	if event.Level == sentry.LevelFatal {
 		w.hub.Flush(w.flushTimeout)
 	}
-	return
+
+	return n, nil
 }
 
 // Close forces client to flush all pending events.
@@ -126,26 +141,31 @@ func (w *Writer) Close() error {
 	return nil
 }
 
-// parses the log level from the encoded log
-func (w *Writer) parseLogLevel(data []byte) (zerolog.Level, error) {
+// parses the log level from the encoded log.
+func (w *Writer) InternalParseLogLevel(data []byte) (zerolog.Level, error) {
 	lvlNode, err := sonic.Get(data, zerolog.LevelFieldName)
 	if err != nil {
+		// inore event if we cannot parse it
+		//nolint:nilerr
 		return zerolog.Disabled, nil
 	}
 	lvlStr, err := lvlNode.String()
 	if err != nil {
+		// inore event if we cannot parse it
+		//nolint:nilerr
 		return zerolog.Disabled, nil
 	}
 
+	//nolint:wrapcheck
 	return zerolog.ParseLevel(lvlStr)
 }
 
-// parses the event except the log level
-func (w *Writer) parseLogEvent(data []byte) (*sentry.Event, bool) {
+// InternalParseLogEvent parses the event except the log level - intenal use only.
+func (w *Writer) InternalParseLogEvent(data []byte) (*sentry.Event, bool) {
 	const logger = "zerolog"
 
 	event := sentry.Event{
-		Timestamp: now(),
+		Timestamp: w.now(),
 		Logger:    logger,
 		Extra:     map[string]interface{}{},
 	}
@@ -223,7 +243,7 @@ outer:
 
 // WriterOption configures sentry events writer.
 type WriterOption interface {
-	apply(*config)
+	apply(cfg *config)
 }
 
 type optionFunc func(*config)
@@ -252,6 +272,7 @@ type config struct {
 	beforeSend       sentry.EventProcessor
 	tracesSampleRate float64
 	attachStacktrace bool
+	now              func() time.Time
 }
 
 // WithLevels configures zerolog levels that have to be sent to Sentry.
@@ -348,21 +369,21 @@ func WithDebugWriter(w io.Writer) WriterOption {
 }
 
 // WithHttpClient sets custom http client.
-func WithHttpClient(httpClient *http.Client) WriterOption {
+func WithHttpClient(httpClient *http.Client) WriterOption { //nolint:stylecheck
 	return optionFunc(func(cfg *config) {
 		cfg.httpClient = httpClient
 	})
 }
 
 // WithHttpProxy enables sentry client tracing.
-func WithHttpProxy(proxy string) WriterOption {
+func WithHttpProxy(proxy string) WriterOption { //nolint:stylecheck
 	return optionFunc(func(cfg *config) {
 		cfg.httpProxy = proxy
 	})
 }
 
 // WithHttpsProxy enables sentry client tracing.
-func WithHttpsProxy(proxy string) WriterOption {
+func WithHttpsProxy(proxy string) WriterOption { //nolint:stylecheck
 	return optionFunc(func(cfg *config) {
 		cfg.httpsProxy = proxy
 	})
@@ -379,6 +400,13 @@ func WithCaCerts(caCerts *x509.CertPool) WriterOption {
 func WithMaxErrorDepth(maxErrorDepth int) WriterOption {
 	return optionFunc(func(cfg *config) {
 		cfg.maxErrorDepth = maxErrorDepth
+	})
+}
+
+// WithFixedTimeStamp sets the timestamp to a fixed value - for testing only.
+func WithFixedTimeStamp(ts time.Time) WriterOption {
+	return optionFunc(func(cfg *config) {
+		cfg.now = func() time.Time { return ts }
 	})
 }
 
@@ -409,6 +437,7 @@ func New(dsn string, opts ...WriterOption) (*Writer, error) {
 		AttachStacktrace: cfg.attachStacktrace,
 	})
 	if err != nil {
+		//nolint: wrapcheck
 		return nil, err
 	}
 
@@ -422,13 +451,14 @@ func New(dsn string, opts ...WriterOption) (*Writer, error) {
 		levels:          levels,
 		flushTimeout:    cfg.flushTimeout,
 		withBreadcrumbs: cfg.breadcrumbs,
+		now:             cfg.now,
 	}, nil
 }
 
 // NewWithHub creates a writer using an existing sentry Hub and options.
 func NewWithHub(hub *sentry.Hub, opts ...WriterOption) (*Writer, error) {
 	if hub == nil {
-		return nil, errors.New("hub cannot be nil")
+		return nil, ErrHubCannotBeNil
 	}
 
 	cfg := newDefaultConfig()
@@ -446,6 +476,7 @@ func NewWithHub(hub *sentry.Hub, opts ...WriterOption) (*Writer, error) {
 		levels:          levels,
 		flushTimeout:    cfg.flushTimeout,
 		withBreadcrumbs: cfg.breadcrumbs,
+		now:             cfg.now,
 	}, nil
 }
 
@@ -457,6 +488,7 @@ func newDefaultConfig() config {
 			zerolog.PanicLevel,
 		},
 		sampleRate:   1.0,
-		flushTimeout: 3 * time.Second,
+		flushTimeout: 3 * time.Second, //nolint:mnd
+		now:          time.Now,
 	}
 }

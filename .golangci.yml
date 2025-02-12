@@ -1,19 +1,16 @@
 linters:
-  enable-all: false
-  enable:
-    - unparam
-    - whitespace
-    - unconvert
-    - bodyclose
-    - nakedret
-    - prealloc
-    - rowserrcheck
-    - unconvert
-    - gocritic
-    - godox
-    - errcheck
-    - ineffassign
+  enable-all: true
+  disable:
+    - depguard
+    - exhaustruct
+    - ireturn
+    - nlreturn
+    - paralleltest
+    - revive
+    - varnamelen
+    - wsl
+
 
 linters-settings:
-  govet:
-    check-shadowing: true
+  cyclop:
+    max-complexity: 11
