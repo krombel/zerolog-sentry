@@ -1,4 +1,4 @@
-module github.com/archdx/zerolog-sentry
+module github.com/krombel/zerolog-sentry
 
 go 1.21
 

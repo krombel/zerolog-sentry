@@ -1,6 +1,6 @@
 # zerolog-sentry
-[![Build Status](https://github.com/archdx/zerolog-sentry/workflows/test/badge.svg)](https://github.com/archdx/zerolog-sentry/actions)
-[![codecov](https://codecov.io/gh/archdx/zerolog-sentry/branch/master/graph/badge.svg)](https://codecov.io/gh/archdx/zerolog-sentry)
+[![Build Status](https://github.com/krombel/zerolog-sentry/workflows/test/badge.svg)](https://github.com/krombel/zerolog-sentry/actions)
+[![codecov](https://codecov.io/gh/krombel/zerolog-sentry/branch/master/graph/badge.svg)](https://codecov.io/gh/krombel/zerolog-sentry)
 
 ### Example
 ```go
@@ -9,7 +9,7 @@ import (
 	stdlog "log"
 	"os"
 
-	"github.com/archdx/zerolog-sentry"
+	"github.com/krombel/zerolog-sentry"
 	"github.com/rs/zerolog"
 )
 
