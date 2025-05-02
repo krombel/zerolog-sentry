@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/bytedance/sonic v1.12.8
-	github.com/getsentry/sentry-go v0.31.1
+	github.com/getsentry/sentry-go v0.32.0
 	github.com/rs/zerolog v1.33.0
 	github.com/stretchr/testify v1.10.0
 )
