@@ -7,7 +7,7 @@ test:
 	@$(GO) test -v -race -cover
 
 lint:
-	golangci-lint run --deadline=5m -v
+	golangci-lint run -v
 
 benchmarks:
 	@$(GO) test -bench=. -benchmem

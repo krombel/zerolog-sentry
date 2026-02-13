@@ -27,6 +27,7 @@ func GetSentryLevel(level zerolog.Level) sentry.Level {
 	if sLevel, ok := levelsMapping[level]; ok {
 		return sLevel
 	}
+
 	return sentry.LevelDebug
 }
 
@@ -44,26 +45,76 @@ type Writer struct {
 	now func() time.Time
 }
 
-// addBreadcrumb adds event as a breadcrumb.
-func (w *Writer) addBreadcrumb(event *sentry.Event) {
-	if !w.withBreadcrumbs {
-		return
+// New creates writer with provided DSN and options.
+func New(dsn string, opts ...WriterOption) (*Writer, error) {
+	cfg := newDefaultConfig()
+	for _, opt := range opts {
+		opt.apply(&cfg)
 	}
 
-	// category is totally optional, but it's nice to have
-	var category string
-	if _, ok := event.Extra["category"]; ok {
-		if v, ok := event.Extra["category"].(string); ok {
-			category = v
-		}
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn:              dsn,
+		SampleRate:       cfg.sampleRate,
+		Release:          cfg.release,
+		Environment:      cfg.environment,
+		ServerName:       cfg.serverName,
+		IgnoreErrors:     cfg.ignoreErrors,
+		Debug:            cfg.debug,
+		EnableTracing:    cfg.tracing,
+		DebugWriter:      cfg.debugWriter,
+		HTTPClient:       cfg.httpClient,
+		HTTPProxy:        cfg.httpProxy,
+		HTTPSProxy:       cfg.httpsProxy,
+		CaCerts:          cfg.caCerts,
+		MaxErrorDepth:    cfg.maxErrorDepth,
+		BeforeSend:       cfg.beforeSend,
+		TracesSampleRate: cfg.tracesSampleRate,
+		AttachStacktrace: cfg.attachStacktrace,
+	})
+	if err != nil {
+		//nolint: wrapcheck
+		return nil, err
 	}
 
-	w.hub.AddBreadcrumb(&sentry.Breadcrumb{
-		Category: category,
-		Message:  event.Message,
-		Level:    event.Level,
-		Data:     event.Extra,
-	}, nil)
+	levels := make(map[zerolog.Level]struct{}, len(cfg.levels))
+	for _, lvl := range cfg.levels {
+		levels[lvl] = struct{}{}
+	}
+
+	return &Writer{
+		hub:             sentry.CurrentHub(),
+		levels:          levels,
+		flushTimeout:    cfg.flushTimeout,
+		withBreadcrumbs: cfg.breadcrumbs,
+		now:             cfg.now,
+	}, nil
+}
+
+// NewWithHub creates a writer using an existing sentry Hub and options.
+//
+// constructors kept with option helpers for readability.
+func NewWithHub(hub *sentry.Hub, opts ...WriterOption) (*Writer, error) {
+	if hub == nil {
+		return nil, ErrHubCannotBeNil
+	}
+
+	cfg := newDefaultConfig()
+	for _, opt := range opts {
+		opt.apply(&cfg)
+	}
+
+	levels := make(map[zerolog.Level]struct{}, len(cfg.levels))
+	for _, lvl := range cfg.levels {
+		levels[lvl] = struct{}{}
+	}
+
+	return &Writer{
+		hub:             hub,
+		levels:          levels,
+		flushTimeout:    cfg.flushTimeout,
+		withBreadcrumbs: cfg.breadcrumbs,
+		now:             cfg.now,
+	}, nil
 }
 
 // Write handles zerolog's json and sends events to sentry.
@@ -81,6 +132,7 @@ func (w *Writer) Write(data []byte) (int, error) {
 	if !ok {
 		return n, nil
 	}
+
 	event.Level, ok = levelsMapping[lvl]
 	if !ok {
 		return n, nil
@@ -101,7 +153,7 @@ func (w *Writer) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-// implements zerolog.LevelWriter.
+// WriteLevel implements zerolog.LevelWriter.
 func (w *Writer) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	n := len(p)
 
@@ -110,6 +162,7 @@ func (w *Writer) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 		// ignore unparseable event
 		return n, nil
 	}
+
 	event.Level, ok = levelsMapping[level]
 	if !ok {
 		// ignore event with no known level
@@ -138,10 +191,11 @@ func (w *Writer) Close() error {
 	if ok := w.hub.Flush(w.flushTimeout); !ok {
 		return ErrFlushTimeout
 	}
+
 	return nil
 }
 
-// parses the log level from the encoded log.
+// InternalParseLogLevel parses the log level from the encoded log.
 func (w *Writer) InternalParseLogLevel(data []byte) (zerolog.Level, error) {
 	lvlNode, err := sonic.Get(data, zerolog.LevelFieldName)
 	if err != nil {
@@ -149,6 +203,7 @@ func (w *Writer) InternalParseLogLevel(data []byte) (zerolog.Level, error) {
 		//nolint:nilerr
 		return zerolog.Disabled, nil
 	}
+
 	lvlStr, err := lvlNode.String()
 	if err != nil {
 		// inore event if we cannot parse it
@@ -167,18 +222,21 @@ func (w *Writer) InternalParseLogEvent(data []byte) (*sentry.Event, bool) {
 	event := sentry.Event{
 		Timestamp: w.now(),
 		Logger:    logger,
-		Extra:     map[string]interface{}{},
+		Extra:     map[string]any{},
 	}
 
 	rootNode, err := sonic.Get(data)
 	if err != nil {
 		return nil, false
 	}
+
 	var value ast.Pair
+
 	for iter, err := rootNode.Properties(); iter.Next(&value); {
 		if err != nil {
 			return nil, false
 		}
+
 		switch value.Key {
 		case zerolog.MessageFieldName:
 			event.Message, err = value.Value.String()
@@ -190,6 +248,7 @@ func (w *Writer) InternalParseLogEvent(data []byte) (*sentry.Event, bool) {
 			if err != nil {
 				return nil, false
 			}
+
 			event.Exception = append(event.Exception, sentry.Exception{
 				Value:      content,
 				Stacktrace: newStacktrace(),
@@ -201,6 +260,7 @@ func (w *Writer) InternalParseLogEvent(data []byte) (*sentry.Event, bool) {
 				// it might be an embedded json => skip this entry
 				continue
 			}
+
 			event.Extra[value.Key] = content
 		}
 	}
@@ -369,21 +429,21 @@ func WithDebugWriter(w io.Writer) WriterOption {
 }
 
 // WithHttpClient sets custom http client.
-func WithHttpClient(httpClient *http.Client) WriterOption { //nolint:stylecheck
+func WithHttpClient(httpClient *http.Client) WriterOption {
 	return optionFunc(func(cfg *config) {
 		cfg.httpClient = httpClient
 	})
 }
 
 // WithHttpProxy enables sentry client tracing.
-func WithHttpProxy(proxy string) WriterOption { //nolint:stylecheck
+func WithHttpProxy(proxy string) WriterOption {
 	return optionFunc(func(cfg *config) {
 		cfg.httpProxy = proxy
 	})
 }
 
 // WithHttpsProxy enables sentry client tracing.
-func WithHttpsProxy(proxy string) WriterOption { //nolint:stylecheck
+func WithHttpsProxy(proxy string) WriterOption {
 	return optionFunc(func(cfg *config) {
 		cfg.httpsProxy = proxy
 	})
@@ -410,74 +470,27 @@ func WithFixedTimeStamp(ts time.Time) WriterOption {
 	})
 }
 
-// New creates writer with provided DSN and options.
-func New(dsn string, opts ...WriterOption) (*Writer, error) {
-	cfg := newDefaultConfig()
-	for _, opt := range opts {
-		opt.apply(&cfg)
+// addBreadcrumb adds event as a breadcrumb.
+func (w *Writer) addBreadcrumb(event *sentry.Event) {
+	if !w.withBreadcrumbs {
+		return
 	}
 
-	err := sentry.Init(sentry.ClientOptions{
-		Dsn:              dsn,
-		SampleRate:       cfg.sampleRate,
-		Release:          cfg.release,
-		Environment:      cfg.environment,
-		ServerName:       cfg.serverName,
-		IgnoreErrors:     cfg.ignoreErrors,
-		Debug:            cfg.debug,
-		EnableTracing:    cfg.tracing,
-		DebugWriter:      cfg.debugWriter,
-		HTTPClient:       cfg.httpClient,
-		HTTPProxy:        cfg.httpProxy,
-		HTTPSProxy:       cfg.httpsProxy,
-		CaCerts:          cfg.caCerts,
-		MaxErrorDepth:    cfg.maxErrorDepth,
-		BeforeSend:       cfg.beforeSend,
-		TracesSampleRate: cfg.tracesSampleRate,
-		AttachStacktrace: cfg.attachStacktrace,
-	})
-	if err != nil {
-		//nolint: wrapcheck
-		return nil, err
+	// category is totally optional, but it's nice to have
+	var category string
+
+	if _, ok := event.Extra["category"]; ok {
+		if v, ok := event.Extra["category"].(string); ok {
+			category = v
+		}
 	}
 
-	levels := make(map[zerolog.Level]struct{}, len(cfg.levels))
-	for _, lvl := range cfg.levels {
-		levels[lvl] = struct{}{}
-	}
-
-	return &Writer{
-		hub:             sentry.CurrentHub(),
-		levels:          levels,
-		flushTimeout:    cfg.flushTimeout,
-		withBreadcrumbs: cfg.breadcrumbs,
-		now:             cfg.now,
-	}, nil
-}
-
-// NewWithHub creates a writer using an existing sentry Hub and options.
-func NewWithHub(hub *sentry.Hub, opts ...WriterOption) (*Writer, error) {
-	if hub == nil {
-		return nil, ErrHubCannotBeNil
-	}
-
-	cfg := newDefaultConfig()
-	for _, opt := range opts {
-		opt.apply(&cfg)
-	}
-
-	levels := make(map[zerolog.Level]struct{}, len(cfg.levels))
-	for _, lvl := range cfg.levels {
-		levels[lvl] = struct{}{}
-	}
-
-	return &Writer{
-		hub:             hub,
-		levels:          levels,
-		flushTimeout:    cfg.flushTimeout,
-		withBreadcrumbs: cfg.breadcrumbs,
-		now:             cfg.now,
-	}, nil
+	w.hub.AddBreadcrumb(&sentry.Breadcrumb{
+		Category: category,
+		Message:  event.Message,
+		Level:    event.Level,
+		Data:     event.Extra,
+	}, nil)
 }
 
 func newDefaultConfig() config {

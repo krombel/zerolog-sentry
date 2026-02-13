@@ -23,8 +23,10 @@ func TestInternalParseLogEvent(t *testing.T) {
 
 	ev, ok := w.InternalParseLogEvent(logEventJSON)
 	require.True(t, ok)
+
 	zLevel, err := w.InternalParseLogLevel(logEventJSON)
 	require.NoError(t, err)
+
 	ev.Level = zlogsentry.GetSentryLevel(zLevel)
 	assert.NotEqual(t, sentry.LevelDebug, ev.Level)
 
@@ -59,12 +61,15 @@ func TestWrite(t *testing.T) {
 			assert.Equal(t, "dial timeout", event.Exception[0].Value)
 			assert.Less(t, time.Since(event.Timestamp).Minutes(), float64(1))
 			assert.Equal(t, "bee07485-2485-4f64-99e1-d10165884ca7", event.Extra["requestId"])
+
 			beforeSendCalled = true
+
 			return event
 		}))
 	require.NoError(t, err)
 
 	var zerologError error
+
 	zerolog.ErrorHandler = func(err error) { //nolint:reassign
 		zerologError = err
 	}
@@ -85,11 +90,13 @@ func TestWrite_TraceDoesNotPanic(t *testing.T) {
 	writer, err := zlogsentry.New("",
 		zlogsentry.WithBeforeSend(func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
 			beforeSendCalled = true
+
 			return event
 		}))
 	require.NoError(t, err)
 
 	var zerologError error
+
 	zerolog.ErrorHandler = func(err error) { //nolint:reassign
 		zerologError = err
 	}
@@ -114,12 +121,15 @@ func TestWriteLevel(t *testing.T) {
 			assert.Equal(t, "dial timeout", event.Exception[0].Value)
 			assert.Less(t, time.Since(event.Timestamp).Minutes(), float64(1))
 			assert.Equal(t, "bee07485-2485-4f64-99e1-d10165884ca7", event.Extra["requestId"])
+
 			beforeSendCalled = true
+
 			return event
 		}))
 	require.NoError(t, err)
 
 	var zerologError error
+
 	zerolog.ErrorHandler = func(err error) { //nolint:reassign
 		zerologError = err
 	}
@@ -140,11 +150,13 @@ func TestWrite_Disabled(t *testing.T) {
 		zlogsentry.WithLevels(zerolog.FatalLevel),
 		zlogsentry.WithBeforeSend(func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
 			beforeSendCalled = true
+
 			return event
 		}))
 	require.NoError(t, err)
 
 	var zerologError error
+
 	zerolog.ErrorHandler = func(err error) { //nolint:reassign
 		zerologError = err
 	}
@@ -166,11 +178,13 @@ func TestWriteLevel_Disabled(t *testing.T) {
 		zlogsentry.WithLevels(zerolog.FatalLevel),
 		zlogsentry.WithBeforeSend(func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
 			beforeSendCalled = true
+
 			return event
 		}))
 	require.NoError(t, err)
 
 	var zerologError error
+
 	zerolog.ErrorHandler = func(err error) { //nolint:reassign
 		zerologError = err
 	}
@@ -191,7 +205,7 @@ func BenchmarkInternalParseLogEvent(b *testing.B) {
 		b.Errorf("failed to create writer: %v", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		w.InternalParseLogEvent(logEventJSON)
 	}
 }
@@ -202,7 +216,7 @@ func BenchmarkInternalParseLogEvent_Disabled(b *testing.B) {
 		b.Errorf("failed to create writer: %v", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		w.InternalParseLogEvent(logEventJSON)
 	}
 }
@@ -213,7 +227,7 @@ func BenchmarkWriteLogEvent(b *testing.B) {
 		b.Errorf("failed to create writer: %v", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = w.Write(logEventJSON)
 	}
 }
@@ -224,7 +238,7 @@ func BenchmarkWriteLogEvent_Disabled(b *testing.B) {
 		b.Errorf("failed to create writer: %v", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = w.Write(logEventJSON)
 	}
 }
@@ -235,7 +249,7 @@ func BenchmarkWriteLogLevelEvent(b *testing.B) {
 		b.Errorf("failed to create writer: %v", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = w.WriteLevel(zerolog.ErrorLevel, logEventJSON)
 	}
 }
@@ -246,7 +260,7 @@ func BenchmarkWriteLogLevelEvent_Disabled(b *testing.B) {
 		b.Errorf("failed to create writer: %v", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = w.WriteLevel(zerolog.ErrorLevel, logEventJSON)
 	}
 }

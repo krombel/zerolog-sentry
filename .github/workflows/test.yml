@@ -11,20 +11,34 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        goversion:
+          - 1.24
+          - 1.25
+          - 1.26
     steps:
       - uses: actions/setup-go@v5
         with:
-          go-version: 1.21
+          go-version: ${{ matrix.goversion }}
       - uses: actions/checkout@v4
       - run: make test
 
   codecov:
     name: codecov
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        goversion:
+          - 1.24
+          - 1.25
+          - 1.26
     steps:
       - uses: actions/setup-go@v5
         with:
-          go-version: 1.21
+          go-version: ${{ matrix.goversion }}
       - uses: actions/checkout@v4
       - run: make coverage
       - run: bash <(curl -s https://codecov.io/bash)

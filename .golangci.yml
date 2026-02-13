@@ -1,5 +1,6 @@
+version: "2"
 linters:
-  enable-all: true
+  default: all
   disable:
     - depguard
     - exhaustruct
@@ -9,8 +10,21 @@ linters:
     - revive
     - varnamelen
     - wsl
-
-
-linters-settings:
-  cyclop:
-    max-complexity: 11
+  settings:
+    cyclop:
+      max-complexity: 11
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
