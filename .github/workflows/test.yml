@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.goversion }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: make test
 
   codecov:
@@ -39,6 +39,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.goversion }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: make coverage
       - run: bash <(curl -s https://codecov.io/bash)
