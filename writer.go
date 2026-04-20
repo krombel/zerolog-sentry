@@ -70,6 +70,7 @@ func New(dsn string, opts ...WriterOption) (*Writer, error) {
 		BeforeSend:       cfg.beforeSend,
 		TracesSampleRate: cfg.tracesSampleRate,
 		AttachStacktrace: cfg.attachStacktrace,
+		SendDefaultPII:   cfg.sendDefaultPII,
 	})
 	if err != nil {
 		//nolint: wrapcheck
@@ -332,6 +333,7 @@ type config struct {
 	beforeSend       sentry.EventProcessor
 	tracesSampleRate float64
 	attachStacktrace bool
+	sendDefaultPII   bool
 	now              func() time.Time
 }
 
@@ -467,6 +469,12 @@ func WithMaxErrorDepth(maxErrorDepth int) WriterOption {
 func WithFixedTimeStamp(ts time.Time) WriterOption {
 	return optionFunc(func(cfg *config) {
 		cfg.now = func() time.Time { return ts }
+	})
+}
+
+func WithSendDefaultPII() WriterOption {
+	return optionFunc(func(cfg *config) {
+		cfg.sendDefaultPII = true
 	})
 }
 
