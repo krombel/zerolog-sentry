@@ -223,7 +223,7 @@ func (w *Writer) InternalParseLogEvent(data []byte) (*sentry.Event, bool) {
 	event := sentry.Event{
 		Timestamp: w.now(),
 		Logger:    logger,
-		Extra:     map[string]any{},
+		Tags:      map[string]string{},
 	}
 
 	rootNode, err := sonic.Get(data)
@@ -262,7 +262,7 @@ func (w *Writer) InternalParseLogEvent(data []byte) (*sentry.Event, bool) {
 				continue
 			}
 
-			event.Extra[value.Key] = content
+			event.Tags[value.Key] = content
 		}
 	}
 
@@ -487,17 +487,22 @@ func (w *Writer) addBreadcrumb(event *sentry.Event) {
 	// category is totally optional, but it's nice to have
 	var category string
 
-	if _, ok := event.Extra["category"]; ok {
-		if v, ok := event.Extra["category"].(string); ok {
+	if _, ok := event.Tags["category"]; ok {
+		if v, ok := event.Tags["category"]; ok {
 			category = v
 		}
+	}
+
+	tagsMap := make(map[string]any, len(event.Tags))
+	for k, v := range event.Tags {
+		tagsMap[k] = v
 	}
 
 	w.hub.AddBreadcrumb(&sentry.Breadcrumb{
 		Category: category,
 		Message:  event.Message,
 		Level:    event.Level,
-		Data:     event.Extra,
+		Data:     tagsMap,
 	}, nil)
 }
 
